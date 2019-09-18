@@ -5,6 +5,12 @@
 - `ExcludedItemError`: is raised when creating a local item which already exists on
   Dropbox but has been been excluded from syncing.
 
+- '.mignore': Uses the same syntax as '.gitignore' to specify files and folders to be
+  ignored by Maestral. Unlike excluded folders, which live only on the server and can be
+  specified through the GUI or CLI, items in '.mignore' will remain present locally (and
+  online, if already uploaded) but will be entirely excluded from syncing. Simply add a
+  file '.mignore' to the top-level of your Dropbox folder.
+
 #### Changed:
 
 - Timeout connection check after 1 sec. This improves how quickly Maestral notices that

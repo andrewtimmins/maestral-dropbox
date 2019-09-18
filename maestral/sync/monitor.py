@@ -32,6 +32,7 @@ from watchdog.events import (DirModifiedEvent, FileModifiedEvent,
                              DirDeletedEvent, FileDeletedEvent,
                              DirMovedEvent, FileMovedEvent)
 from watchdog.utils.dirsnapshot import DirectorySnapshot
+import pathspec
 
 # maestral modules
 from maestral.config.main import CONF
@@ -54,6 +55,7 @@ SYNC_ERROR = "Sync error"
 
 REV_FILE = ".maestral"
 OLD_REV_FILE = ".dropbox"
+IGNORE_FILE = ".mignore"
 
 
 # ========================================================================================
@@ -259,6 +261,7 @@ class UpDownSync(object):
         self._excluded_files = CONF.get("main", "excluded_files")
         self._excluded_folders = CONF.get("main", "excluded_folders")
         self._rev_dict_cache = self._load_rev_dict_from_file()
+        self._maestralignore_rules = self._load_maestralignore_rules_form_file()
 
     def _migrate_rev_file(self):
         if os.path.isfile(self._old_rev_file_path):
@@ -342,9 +345,26 @@ class UpDownSync(object):
         self._excluded_folders = clean_list
         CONF.set("main", "excluded_folders", clean_list)
 
-    # ====================================================================================
+    @property
+    def maestralignore_path(self):
+        return osp.join(self.dropbox_path, IGNORE_FILE)
+
+    @property
+    def maestralignore_rules(self):
+        return self._maestralignore_rules
+
+   # ====================================================================================
     #  Helper functions
     # ====================================================================================
+
+    def _load_maestralignore_rules_form_file(self):
+        try:
+            with open(self.maestralignore_path, 'r') as f:
+                spec = f.read()
+        except FileNotFoundError:
+            spec = ""
+        spec = spec.lower()  # convert all patterns to lower case
+        return pathspec.PathSpec.from_lines('gitwildmatch', spec.splitlines())
 
     @staticmethod
     def clean_excluded_folder_list(folder_list):
@@ -648,6 +668,9 @@ class UpDownSync(object):
         """
 
         logger.info("Indexing...")
+
+        # reload '.maestralignore' before syncing any changes
+        self._maestralignore_rules = self._load_maestralignore_rules_form_file()
 
         try:
             events = self._get_local_changes_while_inactive()
@@ -962,6 +985,10 @@ class UpDownSync(object):
         decorator."""
 
         self.clear_sync_error(local_path=event.src_path)
+
+        # is '.maestralignore' file? => update ignore rules
+        if self.maestralignore_path in (event.src_path, getattr(event, "dest_path", "")):
+            self._maestralignore_rules = self._load_maestralignore_rules_form_file()
 
         # apply event
         if event.event_type is EVENT_TYPE_CREATED:
@@ -1465,6 +1492,11 @@ class UpDownSync(object):
                 logger.debug("FileNotFoundError: {0}".format(e))
 
             self.set_local_rev(entry.path_display, None)
+
+        # is '.maestralignore' file? => update rules
+        # do this after downloading!
+        if local_path == self.maestralignore_path:
+            self._maestralignore_rules = self._load_maestralignore_rules_form_file()
 
         self.clear_sync_error(dbx_path=entry.path_display)
 
